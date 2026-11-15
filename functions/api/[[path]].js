@@ -55,7 +55,7 @@ const INITIAL_GUESTS = [
   "Henry",
   "Ferdinand",
   "Isabella",
-  "Nikolaus",
+  "Niko",
   "Faye",
   "Marlon",
   "Dorian",
@@ -66,13 +66,16 @@ const INITIAL_GUESTS = [
   "Pauli",
   "Sebi",
   "Lukas",
-  "Ulrike",
+  "Ulli",
   "Holger",
   "Lorenz"
 ];
 
 // Einmalige Umbenennung: Nachnamen entfernen (betrifft nur Einträge, die noch genau so heißen)
-const RENAME_V1 = [["Moritz Graf von Saurma", "Moritz S."], ["Atieno Wolters", "Atieno"], ["Tom Heldt", "Tom"], ["Imani Wolters", "Imani"], ["Jonathan Hauff", "Jonathan"], ["Ole Lijun Zhu", "Ole"], ["Hagen Hoffmann", "Hagen"], ["Moritz Heilig", "Moritz H."], ["Begleitung von Moritz Heilig", "Begleitung von Moritz H."], ["Louis Golze", "Louis"], ["Jannik Lahn", "Jannik"], ["Vivien Gschwind", "Vivien"], ["Martin Kruppa", "Martin"], ["Chris Nagel", "Chris"], ["Begleitung von Chris Nagel", "Begleitung von Chris"], ["Nils Frilling", "Nils"], ["Begleitung von Nils Frilling", "Begleitung von Nils"], ["Henry Kirste", "Henry"], ["Ferdinand Wohlenberg", "Ferdinand"], ["Isabella Immhoff", "Isabella"], ["Nikolaus Wohlenberg", "Nikolaus"], ["Faye Bremer", "Faye"], ["Marlon Jouhoff", "Marlon"], ["Dorian Jouhoff", "Dorian"], ["Vanessa Werner", "Vanessa"], ["Paul (Begleitung von Vanessa Werner)", "Paul (Begleitung von Vanessa)"], ["Alina König", "Alina"], ["Tobi König", "Tobi"], ["Pauli Sya", "Pauli"], ["Sebi Sya", "Sebi"], ["Lukas Göschel", "Lukas"], ["Ulrike Wohlenberg", "Ulrike"], ["Holger Wohlenberg", "Holger"], ["Lorenz Werther", "Lorenz"]];
+// Zweite Umbenennung für Datenbanken, die schon die erste hatten
+const RENAME_V2 = [["Ulrike", "Ulli"], ["Ulrike Wohlenberg", "Ulli"], ["Nikolaus", "Niko"], ["Nikolaus Wohlenberg", "Niko"]];
+
+const RENAME_V1 = [["Moritz Graf von Saurma", "Moritz S."], ["Atieno Wolters", "Atieno"], ["Tom Heldt", "Tom"], ["Imani Wolters", "Imani"], ["Jonathan Hauff", "Jonathan"], ["Ole Lijun Zhu", "Ole"], ["Hagen Hoffmann", "Hagen"], ["Moritz Heilig", "Moritz H."], ["Begleitung von Moritz Heilig", "Begleitung von Moritz H."], ["Louis Golze", "Louis"], ["Jannik Lahn", "Jannik"], ["Vivien Gschwind", "Vivien"], ["Martin Kruppa", "Martin"], ["Chris Nagel", "Chris"], ["Begleitung von Chris Nagel", "Begleitung von Chris"], ["Nils Frilling", "Nils"], ["Begleitung von Nils Frilling", "Begleitung von Nils"], ["Henry Kirste", "Henry"], ["Ferdinand Wohlenberg", "Ferdinand"], ["Isabella Immhoff", "Isabella"], ["Nikolaus Wohlenberg", "Niko"], ["Faye Bremer", "Faye"], ["Marlon Jouhoff", "Marlon"], ["Dorian Jouhoff", "Dorian"], ["Vanessa Werner", "Vanessa"], ["Paul (Begleitung von Vanessa Werner)", "Paul (Begleitung von Vanessa)"], ["Alina König", "Alina"], ["Tobi König", "Tobi"], ["Pauli Sya", "Pauli"], ["Sebi Sya", "Sebi"], ["Lukas Göschel", "Lukas"], ["Ulrike Wohlenberg", "Ulli"], ["Holger Wohlenberg", "Holger"], ["Lorenz Werther", "Lorenz"]];
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -135,6 +138,14 @@ async function ensureSchema(db) {
       db.prepare("UPDATE guests SET name = ? WHERE name = ? AND NOT EXISTS (SELECT 1 FROM guests WHERE name = ?)").bind(newName, oldName, newName)
     );
     stmts.push(db.prepare("INSERT OR IGNORE INTO config (key, value) VALUES ('renamed-v1', '1')"));
+    await db.batch(stmts);
+  }
+  const renamed2 = await db.prepare("SELECT value FROM config WHERE key = 'renamed-v2'").first();
+  if (!renamed2) {
+    const stmts = RENAME_V2.map(([oldName, newName]) =>
+      db.prepare("UPDATE guests SET name = ? WHERE name = ? AND NOT EXISTS (SELECT 1 FROM guests WHERE name = ?)").bind(newName, oldName, newName)
+    );
+    stmts.push(db.prepare("INSERT OR IGNORE INTO config (key, value) VALUES ('renamed-v2', '1')"));
     await db.batch(stmts);
   }
   schemaReady = true;
