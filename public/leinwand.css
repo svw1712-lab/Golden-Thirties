@@ -1,0 +1,71 @@
+/* Leinwand-Ansicht für den Beamer (16:9, aus der Distanz lesbar) */
+.screen {
+  margin: 0; height: 100vh; overflow: hidden; color: #fff;
+  background:
+    var(--velvet-grain),
+    var(--velvet-pile),
+    radial-gradient(ellipse 70% 55% at 50% 0%, rgba(255,110,160,.18), rgba(255,110,160,0) 70%),
+    var(--velvet-folds),
+    var(--velvet-base);
+  background-size: 180px 180px, 240px 100%, auto, auto, auto;
+  font-size: 2.2vh;
+}
+.screen-top { position: fixed; top: 2.5vh; left: 3vw; display: flex; align-items: center; gap: 1.2vw; z-index: 5; }
+.screen-logo { height: 9vh; width: auto; }
+.screen-title { font-family: var(--serif); font-size: 3.6vh; color: #f6d27a; }
+.screen-stage { position: absolute; inset: 0; display: grid; place-items: center; padding: 14vh 6vw 10vh; }
+.screen-wait { font-size: 3vh; opacity: .8; }
+
+.screen-qr {
+  position: fixed; right: 2.5vw; bottom: 3vh; z-index: 5;
+  display: flex; align-items: center; gap: 1vw;
+  background: rgba(0,0,0,.35); padding: 1.2vh 1.2vw; border-radius: 1.2vh;
+  font-size: 2.2vh; line-height: 1.3;
+}
+.screen-qr img { width: 13vh; height: 13vh; border-radius: .6vh; }
+.screen-fs {
+  position: fixed; left: 2vw; bottom: 2vh; z-index: 6; font: inherit; font-size: 1.6vh;
+  background: rgba(0,0,0,.3); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: .6vh 1.2vw; cursor: pointer;
+}
+.screen-fs.hidden { display: none; }
+
+/* Fotoshow */
+.show { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
+.show-photo {
+  background: #fff; padding: 1.4vh 1.4vh 0; box-shadow: 0 3vh 7vh rgba(0,0,0,.55);
+  transform: rotate(var(--tilt, -2deg)); max-width: 70vw;
+  animation: photoIn .9s cubic-bezier(.2,1.2,.4,1);
+}
+.show-photo img { display: block; max-height: 62vh; max-width: 66vw; width: auto; height: auto; }
+.show-photo figcaption { color: var(--ink); font-family: var(--serif); font-size: 3vh; text-align: center; padding: 1.2vh 1vh 1.6vh; }
+.show-photo figcaption small { display: block; font-family: var(--sans); font-size: 2vh; color: var(--ink-soft); }
+.show-new {
+  position: absolute; top: -2vh; right: -2vh; background: var(--flash); color: var(--ink);
+  font-weight: 700; font-size: 2.4vh; padding: .8vh 1.6vh; border-radius: 999px; transform: rotate(8deg);
+}
+@keyframes photoIn { from { opacity: 0; transform: rotate(var(--tilt, -2deg)) scale(.85); } to { opacity: 1; transform: rotate(var(--tilt, -2deg)) scale(1); } }
+.show-empty { text-align: center; }
+.show-empty img { width: 30vh; height: 30vh; border-radius: 1.5vh; margin: 3vh auto 0; display: block; }
+.show-empty h1 { font-family: var(--serif); font-weight: 400; font-size: 7vh; margin: 0 0 1vh; }
+.show-empty p { font-size: 3vh; opacity: .85; margin: 0; }
+
+/* Sophie oder Anne */
+.duel { width: 100%; max-width: 80vw; text-align: center; }
+.duel-kicker { font-size: 3vh; color: #f6d27a; margin: 0 0 1vh; }
+.duel-q { font-family: var(--serif); font-weight: 400; font-size: 7.5vh; line-height: 1.1; margin: 0 0 5vh; text-shadow: 0 .4vh 2vh rgba(0,0,0,.5); }
+.duel-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 4vw; align-items: end; height: 38vh; }
+.duel-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+.duel-track { flex: 1; min-height: 0; width: 100%; display: flex; align-items: flex-end; justify-content: center; }
+.duel-bar {
+  width: 60%; min-height: 1vh; border-radius: 1.5vh 1.5vh 0 0;
+  background: linear-gradient(180deg, #fbe3a0, #e9b949 55%, #b8862b);
+  transition: height .8s cubic-bezier(.2,1,.3,1);
+  display: flex; align-items: flex-start; justify-content: center;
+  color: #3a0519; font-weight: 700; font-size: 4vh; padding-top: 1vh;
+}
+.duel-name { font-family: var(--serif); font-size: 6vh; margin-top: 1.5vh; }
+.duel-col.win .duel-name { color: #f6d27a; }
+.duel-col.win .duel-bar { box-shadow: 0 0 4vh rgba(243,194,74,.6); }
+.duel-col.lose { opacity: .55; }
+.duel-total { margin-top: 3vh; font-size: 2.6vh; opacity: .8; }
+.duel-hint { font-size: 3vh; margin-top: 2vh; color: #f6d27a; }

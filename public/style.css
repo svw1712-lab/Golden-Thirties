@@ -416,3 +416,46 @@ body.intro-open { overflow: hidden; }
 .group > legend { font-family: var(--serif); font-size: 1.4rem; padding: 0 .4rem; margin-left: -.4rem; }
 .group .course-edit { background: var(--bg); }
 .sched-edit { display: grid; grid-template-columns: 6rem 1fr auto; gap: .5rem; margin-top: .5rem; align-items: center; }
+
+/* ---------- Abend-Modus (Gästeseite) ---------- */
+.tonight { border-bottom: 0; }
+.evening-card { background: #fff; border-radius: 14px; padding: 1.1rem 1.1rem 1.25rem; margin: 1rem 0; box-shadow: 0 1px 0 var(--line); }
+.evening-h { font-family: var(--serif); font-weight: 400; font-size: 1.4rem; margin: 0 0 .4rem; }
+.vote-q { font-family: var(--serif); font-size: 1.35rem; line-height: 1.25; margin: .25rem 0 .9rem; }
+.vote-btns { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.vote-btn {
+  font: inherit; font-weight: 700; font-size: 1.2rem; padding: 1.1rem .5rem; border-radius: 14px; cursor: pointer;
+  border: 2px solid var(--curtain); background: #fff; color: var(--curtain);
+}
+.vote-btn.chosen { background: var(--curtain); color: #fff; }
+.vote-btn:active { transform: translateY(2px); }
+.result-row { display: grid; grid-template-columns: 4.5rem 1fr 3rem; gap: .6rem; align-items: center; margin: .4rem 0; }
+.result-name { font-weight: 600; }
+.result-bar { height: 1rem; background: #ebe8ea; border-radius: 999px; overflow: hidden; }
+.result-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--curtain), #a1284f); border-radius: 999px; transition: width .6s ease; }
+.result-num { text-align: right; font-variant-numeric: tabular-nums; }
+.upload-previews { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
+.upload-previews img { width: 4.5rem; height: 4.5rem; object-fit: cover; border-radius: 6px; }
+.mini-gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem; }
+.mini-gallery img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; background: #eee; }
+.mini-gallery:empty::before { content: "Noch keine Fotos – mach das erste!"; color: var(--ink-soft); grid-column: 1 / -1; }
+.recap-banner {
+  background: var(--velvet-grain), var(--velvet-folds), var(--velvet-base);
+  background-size: 180px 180px, auto, auto;
+  color: #fff; border-radius: 14px; padding: 1.5rem; margin: 1.5rem 0; border-bottom: 0;
+}
+.recap-banner h2 { color: var(--flash); }
+.recap-banner .btn { background: var(--flash); color: var(--ink); }
+input[type="number"] { width: 100%; font: inherit; background: #fff; border: 1px solid #b9beb6; border-radius: 8px; padding: .65rem .75rem; }
+
+/* ---------- Admin: Abend ---------- */
+.switch-row { background: #fff; border-radius: 12px; padding: .9rem 1rem; margin: .6rem 0; box-shadow: 0 1px 0 var(--line); }
+.check.big { align-items: flex-start; gap: .8rem; margin: 0; }
+.check.big input { width: 1.4rem; height: 1.4rem; margin-top: .15rem; accent-color: var(--curtain); }
+.check.big strong { display: block; }
+.q-list { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: .5rem; }
+.q-row { background: #fff; border-radius: 12px; padding: .8rem 1rem; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .6rem; align-items: center; box-shadow: 0 1px 0 var(--line); }
+.q-row.live { outline: 2px solid var(--flash); }
+.q-row .row-actions { align-items: center; }
+.add-q { display: grid; grid-template-columns: 1fr auto; gap: .5rem; align-items: center; }
+.admin .notice { margin: .75rem 0; }

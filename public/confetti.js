@@ -78,7 +78,8 @@
   const video = document.getElementById("intro-video");
   let seen = false;
   try { seen = localStorage.getItem("p30-intro") === "1"; } catch {}
-  const deepLink = location.hash && location.hash.length > 1;
+  const deepLink = (location.hash && location.hash.length > 1) || /[?&]karte=/.test(location.search);
+  if (!intro) { const again = document.getElementById("again"); if (again) again.addEventListener("click", fire); return; }
 
   function close() {
     try { localStorage.setItem("p30-intro", "1"); } catch {}

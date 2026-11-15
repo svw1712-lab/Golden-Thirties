@@ -26,9 +26,17 @@ const DEFAULT_CONFIG = {
   foodDeadline: "",  // JJJJ-MM-TT
   foodOpen: true,
   allowFreeName: true,
-  photosOpen: false,
-  photosNote: "Schick uns ein Foto von dir als Kind – für eine kleine Überraschung am Abend. Bis dahin sehen es nur wir beide.",
-  eveningNote: "",
+  eveningMode: false, // Abend-Teil für Gäste sichtbar
+  recapOpen: false,   // „Der Abend in Zahlen“ sichtbar
+  eveningNote: "Schön, dass ihr da seid! Hier könnt ihr heute Abend abstimmen und eure Beweisfotos von den Aufgaben-Karten hochladen.",
+  soQuestions: [
+    { id: "q1", text: "Wer ist öfter zu spät?" },
+    { id: "q2", text: "Wer verliert eher ihr Handy auf einer Party?" },
+    { id: "q3", text: "Wer tanzt heute als Letzte noch?" },
+    { id: "q4", text: "Wer weint eher bei Filmen?" },
+    { id: "q5", text: "Wer kennt mehr Leute hier im Raum?" },
+    { id: "q6", text: "Wer schläft heute zuerst ein?" },
+  ],
   dietOptions: ["vegetarisch", "vegan", "glutenfrei", "laktosefrei", "Nussallergie", "kein Schweinefleisch"],
   courses: [],
 };
@@ -108,10 +116,22 @@ async function ensureSchema(db) {
       )`
     ),
     db.prepare(
-      `CREATE TABLE IF NOT EXISTS photos (
-        guest_id TEXT PRIMARY KEY,
+      `CREATE TABLE IF NOT EXISTS uploads (
+        id TEXT PRIMARY KEY,
+        guest_id TEXT,
+        card INTEGER,
+        caption TEXT,
         data TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        created_at TEXT NOT NULL
+      )`
+    ),
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS votes (
+        question_id TEXT NOT NULL,
+        voter TEXT NOT NULL,
+        choice TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (question_id, voter)
       )`
     ),
     db.prepare(`CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)`),
@@ -235,10 +255,15 @@ function sanitizeConfig(input) {
   const textFields = {
     title: 80, hosts: 120, date: 10, time: 20, endTime: 40, venueName: 120, address: 300, venueNote: 1000,
     parking: 1000, stay: 1500, contact: 400, dresscode: 200, giftNote: 1000, foodIntro: 600,
-    foodDeadline: 10, eveningNote: 600, photosNote: 600, flowNote: 1200,
+    foodDeadline: 10, eveningNote: 600, flowNote: 1200,
   };
   for (const [k, max] of Object.entries(textFields)) if (k in input) c[k] = clean(input[k], max);
-  for (const k of ["foodOpen", "allowFreeName", "photosOpen"]) if (k in input) c[k] = !!input[k];
+  for (const k of ["foodOpen", "allowFreeName", "eveningMode", "recapOpen"]) if (k in input) c[k] = !!input[k];
+  if (Array.isArray(input.soQuestions)) {
+    c.soQuestions = input.soQuestions.slice(0, 40)
+      .map((q, i) => ({ id: clean(q.id, 40) || `q${Date.now().toString(36)}${i}`, text: clean(q.text, 160) }))
+      .filter((q) => q.text);
+  }
   if (Array.isArray(input.schedule)) {
     c.schedule = input.schedule.slice(0, 20)
       .map((r) => ({ time: clean(r.time, 20), what: clean(r.what, 200) }))
@@ -265,14 +290,102 @@ async function publicState(db) {
   const config = await getConfig(db);
   const { results } = await db
     .prepare(
-      `SELECT g.id, g.name, g.choices IS NOT NULL AS done, g.token IS NOT NULL AS locked,
-              EXISTS(SELECT 1 FROM photos p WHERE p.guest_id = g.id) AS hasPhoto
+      `SELECT g.id, g.name, g.choices IS NOT NULL AS done, g.token IS NOT NULL AS locked
          FROM guests g ORDER BY g.name COLLATE NOCASE`
     )
     .all();
+  const { soQuestions, ...publicConfig } = config; // Fragen bleiben bis zum Abend geheim
   return {
-    config,
-    guests: results.map((g) => ({ id: g.id, name: g.name, done: !!g.done, locked: !!g.locked, hasPhoto: !!g.hasPhoto })),
+    config: publicConfig,
+    guests: results.map((g) => ({ id: g.id, name: g.name, done: !!g.done, locked: !!g.locked })),
+  };
+}
+
+// ---------- Abend-Helfer ----------
+async function getLive(db) {
+  const row = await db.prepare("SELECT value FROM config WHERE key = 'live'").first();
+  try { return row ? JSON.parse(row.value) : { qid: null, status: "idle" }; } catch { return { qid: null, status: "idle" }; }
+}
+
+async function voteCounts(db, qid) {
+  const { results } = await db.prepare("SELECT choice, COUNT(*) AS n FROM votes WHERE question_id = ? GROUP BY choice").bind(qid).all();
+  const counts = { sophie: 0, anne: 0 };
+  for (const r of results) counts[r.choice] = r.n;
+  counts.total = counts.sophie + counts.anne;
+  return counts;
+}
+
+async function allVoteCounts(db) {
+  const { results } = await db.prepare("SELECT question_id AS q, choice, COUNT(*) AS n FROM votes GROUP BY question_id, choice").all();
+  const out = {};
+  for (const r of results) {
+    out[r.q] = out[r.q] || { sophie: 0, anne: 0, total: 0 };
+    out[r.q][r.choice] = r.n;
+    out[r.q].total += r.n;
+  }
+  return out;
+}
+
+async function liveState(db, config) {
+  const live = await getLive(db);
+  const q = live.qid ? config.soQuestions.find((x) => x.id === live.qid) : null;
+  const up = await db.prepare("SELECT COUNT(*) AS n, MAX(created_at) AS last FROM uploads").first();
+  return {
+    status: q ? live.status : "idle",
+    question: q ? { id: q.id, text: q.text } : null,
+    counts: q ? await voteCounts(db, q.id) : null,
+    uploads: { count: up.n, last: up.last },
+  };
+}
+
+async function listUploads(db) {
+  const { results } = await db
+    .prepare(
+      `SELECT u.id, u.card, u.caption, u.created_at AS createdAt, g.name AS guestName
+         FROM uploads u LEFT JOIN guests g ON g.id = u.guest_id
+        ORDER BY u.created_at DESC`
+    )
+    .all();
+  return results;
+}
+
+async function imageResponse(db, id) {
+  const row = await db.prepare("SELECT data FROM uploads WHERE id = ?").bind(id).first();
+  if (!row) throw new HttpError(404, "Dieses Foto gibt es nicht mehr.");
+  const m = /^data:(image\/[a-z]+);base64,(.*)$/s.exec(row.data);
+  if (!m) throw new HttpError(500, "Das Foto ist beschädigt.");
+  const bin = atob(m[2]);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Response(bytes, { headers: { "content-type": m[1], "cache-control": "public, max-age=86400" } });
+}
+
+async function recapData(db, config) {
+  const guests = await db.prepare("SELECT COUNT(*) AS n FROM guests").first();
+  const up = await db
+    .prepare("SELECT COUNT(*) AS n, COUNT(DISTINCT card) AS cards, COUNT(DISTINCT guest_id) AS people FROM uploads")
+    .first();
+  const { results: top } = await db
+    .prepare(
+      `SELECT g.name AS name, COUNT(*) AS n FROM uploads u JOIN guests g ON g.id = u.guest_id
+        GROUP BY u.guest_id ORDER BY n DESC, g.name LIMIT 3`
+    )
+    .all();
+  const totals = await allVoteCounts(db);
+  const votes = Object.values(totals).reduce((s, v) => s + v.total, 0);
+  const questions = config.soQuestions
+    .filter((q) => totals[q.id] && totals[q.id].total > 0)
+    .map((q) => ({ text: q.text, ...totals[q.id] }));
+  const score = questions.reduce((acc, q) => {
+    if (q.sophie > q.anne) acc.sophie++;
+    else if (q.anne > q.sophie) acc.anne++;
+    return acc;
+  }, { sophie: 0, anne: 0 });
+  return {
+    title: config.title, hosts: config.hosts, date: config.date, venueName: config.venueName,
+    guests: guests.n, photos: up.n, missions: up.cards, photographers: up.people,
+    topPhotographers: top, votes, questions, score,
+    uploads: await listUploads(db),
   };
 }
 
@@ -306,10 +419,9 @@ async function route(request, env, parts) {
     const guest = await getGuest(db, b);
     const token = new URL(request.url).searchParams.get("token");
     if (!guest.token || token !== guest.token) return json({ id: guest.id, name: guest.name, mine: false });
-    const photo = await db.prepare("SELECT 1 AS x FROM photos WHERE guest_id = ?").bind(b).first();
     return json({
       id: guest.id, name: guest.name, mine: true,
-      choices: parseChoices(guest.choices), dietTags: parseChoices(guest.diet_tags) || [], diet: guest.diet || "", note: guest.note || "", hasPhoto: !!photo,
+      choices: parseChoices(guest.choices), dietTags: parseChoices(guest.diet_tags) || [], diet: guest.diet || "", note: guest.note || "",
     });
   }
 
@@ -327,22 +439,73 @@ async function route(request, env, parts) {
     return json({ ok: true, token });
   }
 
-  if (a === "guests" && b && c === "photo" && method === "POST") {
+  // ---------- Abend: Live-Abstimmung ----------
+  if (a === "live" && !b && method === "GET") {
     const config = await getConfig(db);
-    if (!config.photosOpen) throw new HttpError(403, "Der Foto-Upload ist geschlossen.");
+    if (!config.eveningMode) return json({ active: false });
+    return json({ active: true, ...(await liveState(db, config)) });
+  }
+
+  if (a === "vote" && !b && method === "POST") {
+    const config = await getConfig(db);
+    if (!config.eveningMode) throw new HttpError(403, "Die Abstimmung startet am Abend der Party.");
+    const body = await readBody(request);
+    const live = await getLive(db);
+    if (!live.qid || live.qid !== body.questionId || live.status !== "open") {
+      throw new HttpError(409, "Diese Abstimmung ist schon vorbei.");
+    }
+    const voter = clean(body.voter, 64);
+    if (voter.length < 8) throw new HttpError(400, "Bitte lade die Seite neu und versuch es noch einmal.");
+    if (!["sophie", "anne"].includes(body.choice)) throw new HttpError(400, "Bitte tippe auf einen der beiden Namen.");
+    await db
+      .prepare("INSERT INTO votes (question_id, voter, choice, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(question_id, voter) DO UPDATE SET choice = excluded.choice")
+      .bind(live.qid, voter, body.choice, now())
+      .run();
+    return json({ ok: true, counts: await voteCounts(db, live.qid) });
+  }
+
+  // ---------- Abend: Beweisfotos ----------
+  if (a === "uploads" && !b && method === "POST") {
+    const config = await getConfig(db);
+    if (!config.eveningMode) throw new HttpError(403, "Fotos könnt ihr ab dem Abend der Party hochladen.");
     const body = await readBody(request);
     const image = String(body.image || "");
     if (!/^data:image\/(jpeg|png|webp);base64,/.test(image)) throw new HttpError(400, "Bitte wähle ein Foto (JPG oder PNG).");
-    if (image.length > 1_200_000) throw new HttpError(413, "Das Foto ist zu groß. Bitte wähle ein kleineres.");
-    const guest = await getGuest(db, b);
-    const token = await claim(db, guest, body.token);
+    if (image.length > 1_400_000) throw new HttpError(413, "Das Foto ist zu groß. Bitte wähle ein kleineres.");
+    let guestId = null;
+    if (body.guestId) {
+      const g = await db.prepare("SELECT id FROM guests WHERE id = ?").bind(String(body.guestId)).first();
+      guestId = g ? g.id : null;
+    }
+    const cardNum = parseInt(body.card, 10);
+    const card = Number.isFinite(cardNum) && cardNum > 0 && cardNum < 1000 ? cardNum : null;
+    const count = await db.prepare("SELECT COUNT(*) AS n FROM uploads").first();
+    if (count.n >= 1500) throw new HttpError(403, "Der Fotospeicher ist voll.");
+    const id = crypto.randomUUID();
     await db
-      .prepare(
-        "INSERT INTO photos (guest_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(guest_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at"
-      )
-      .bind(b, image, now())
+      .prepare("INSERT INTO uploads (id, guest_id, card, caption, data, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(id, guestId, card, clean(body.caption, 140), image, now())
       .run();
-    return json({ ok: true, token });
+    return json({ ok: true, id });
+  }
+
+  if (a === "uploads" && !b && method === "GET") {
+    const config = await getConfig(db);
+    if (!config.eveningMode && !config.recapOpen) throw new HttpError(403, "Die Fotos gibt es ab dem Abend der Party.");
+    return json({ uploads: await listUploads(db) });
+  }
+
+  if (a === "uploads" && b && method === "GET") {
+    const config = await getConfig(db);
+    if (!config.eveningMode && !config.recapOpen) throw new HttpError(403, "Die Fotos gibt es ab dem Abend der Party.");
+    return imageResponse(db, b);
+  }
+
+  // ---------- Der Abend in Zahlen ----------
+  if (a === "recap" && !b && method === "GET") {
+    const config = await getConfig(db);
+    if (!config.recapOpen) throw new HttpError(403, "Der Rückblick ist noch nicht freigeschaltet.");
+    return json(await recapData(db, config));
   }
 
   // ---------- Admin ----------
@@ -353,17 +516,19 @@ async function route(request, env, parts) {
       const config = await getConfig(db);
       const { results } = await db
         .prepare(
-          `SELECT g.*, EXISTS(SELECT 1 FROM photos p WHERE p.guest_id = g.id) AS hasPhoto
-             FROM guests g ORDER BY g.name COLLATE NOCASE`
+          `SELECT g.* FROM guests g ORDER BY g.name COLLATE NOCASE`
         )
         .all();
       return json({
         config,
         guests: results.map((g) => ({
           id: g.id, name: g.name, locked: !!g.token, choices: parseChoices(g.choices), dietTags: parseChoices(g.diet_tags) || [],
-          diet: g.diet || "", note: g.note || "", selfAdded: !!g.self_added, hasPhoto: !!g.hasPhoto,
+          diet: g.diet || "", note: g.note || "", selfAdded: !!g.self_added,
           updatedAt: g.updated_at,
         })),
+        live: await liveState(db, config),
+        voteTotals: await allVoteCounts(db),
+        uploads: await listUploads(db),
       });
     }
 
@@ -416,22 +581,38 @@ async function route(request, env, parts) {
 
     if (b === "guests" && c && method === "DELETE") {
       await db.batch([
-        db.prepare("DELETE FROM photos WHERE guest_id = ?").bind(c),
+        db.prepare("UPDATE uploads SET guest_id = NULL WHERE guest_id = ?").bind(c),
         db.prepare("DELETE FROM guests WHERE id = ?").bind(c),
       ]);
       return json({ ok: true });
     }
 
-    if (b === "photo" && c && method === "GET") {
-      const row = await db.prepare("SELECT data FROM photos WHERE guest_id = ?").bind(c).first();
-      if (!row) throw new HttpError(404, "Kein Foto vorhanden.");
-      return json({ image: row.data });
+    if (b === "live" && method === "PUT") {
+      const body = await readBody(request);
+      const config = await getConfig(db);
+      const qid = body.questionId ? String(body.questionId) : null;
+      if (qid && !config.soQuestions.some((q) => q.id === qid)) throw new HttpError(400, "Diese Frage gibt es nicht.");
+      const status = ["open", "closed"].includes(body.status) && qid ? body.status : "idle";
+      await db
+        .prepare("INSERT INTO config (key, value) VALUES ('live', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .bind(JSON.stringify({ qid: status === "idle" ? null : qid, status, at: now() }))
+        .run();
+      return json({ ok: true, live: await liveState(db, config) });
     }
 
-    if (b === "photo" && c && method === "DELETE") {
-      await db.prepare("DELETE FROM photos WHERE guest_id = ?").bind(c).run();
+    if (b === "votes" && c && method === "DELETE") {
+      await db.prepare("DELETE FROM votes WHERE question_id = ?").bind(c).run();
       return json({ ok: true });
     }
+
+    if (b === "uploads" && c && method === "GET") return imageResponse(db, c);
+
+    if (b === "uploads" && c && method === "DELETE") {
+      await db.prepare("DELETE FROM uploads WHERE id = ?").bind(c).run();
+      return json({ ok: true });
+    }
+
+    if (b === "recap" && method === "GET") return json(await recapData(db, await getConfig(db)));
   }
 
   throw new HttpError(404, "Unbekannte Adresse.");

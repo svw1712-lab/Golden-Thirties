@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Der Abend in Zahlen – Die goldenen Dreißiger</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#6b1324">
+  <link rel="icon" href="/img/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/rueckblick.css">
+</head>
+<body class="recap">
+  <canvas id="confetti" aria-hidden="true"></canvas>
+  <header class="recap-hero">
+    <img src="/img/logo.svg" alt="" class="recap-logo">
+    <h1>Der Abend in Zahlen</h1>
+    <p id="recap-sub">Die goldenen Dreißiger</p>
+    <div class="recap-actions no-print">
+      <button type="button" class="btn gold" id="pdf">Als PDF speichern</button>
+      <button type="button" class="btn ghost" id="zip">Alle Fotos herunterladen (ZIP)</button>
+    </div>
+    <p class="recap-progress no-print" id="zip-progress" aria-live="polite"></p>
+  </header>
+  <main id="recap">
+    <p class="loading">Die Zahlen werden gezählt …</p>
+  </main>
+  <footer class="no-print"><a href="/">Zurück zur Party-App</a></footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/confetti.js"></script>
+  <script src="/rueckblick.js"></script>
+</body>
+</html>

@@ -82,10 +82,11 @@
   function renderNav(c) {
     const nav = document.querySelector(".hero nav");
     const again = document.getElementById("again");
-    const links = [["#infos", "Infos"]];
+    const links = c.eveningMode ? [["#heute", "Heute Abend"], ["#infos", "Infos"]] : [["#infos", "Infos"]];
+    if (c.recapOpen) links.unshift(["/rueckblick", "Rückblick"]);
     if (c.flowNote || (c.schedule && c.schedule.length)) links.push(["#ablauf", "Ablauf"]);
     links.push(["#essen", c.courses.length ? "Essen wählen" : "Essen"]);
-    if (c.photosOpen) links.push(["#foto", "Kindheitsfoto"]);
+
     nav.replaceChildren(...links.map(([href, t]) => h("a", { href, text: t })), again);
   }
 
@@ -278,7 +279,7 @@
       note.value = mine?.note || "";
       const msg = h("div", { "aria-live": "polite" });
       const submit = h("button", { type: "submit", class: "btn wide" }, mine?.choices ? "Änderung speichern" : noMenu ? "Angaben speichern" : "Auswahl speichern");
-      form.append(
+      form.append(...[
         h("p", { class: "step", text: (noMenu ? "2" : "3") + ". Worauf soll die Küche achten?" }),
         h("p", { class: "hint", text: "Einfach antippen, was für dich gilt. Wenn nichts zutrifft, kannst du das überspringen." }),
         tagBoxes.length ? h("div", { class: "ticks" }, tagBoxes.map((t) => t.el)) : null,
@@ -288,7 +289,7 @@
         note,
         msg,
         submit
-      );
+      ].filter(Boolean));
       form.addEventListener("submit", async (ev) => {
         ev.preventDefault();
         msg.replaceChildren();
@@ -358,76 +359,194 @@
     } finally { URL.revokeObjectURL(url); }
   }
 
-  function renderPhoto() {
-    const c = state.config;
-    const section = h("section", { id: "foto", "aria-labelledby": "foto-h" },
-      h("h2", { id: "foto-h", text: "Dein Kindheitsfoto" }),
-      c.photosNote ? h("p", { class: "pre", text: c.photosNote }) : null
-    );
-    const area = h("div");
-    const field = nameField("photo-name", "Wer ist auf dem Foto?", (gid) => showUpload(gid));
-    section.append(field.el, area);
+  // ---------- Abend-Modus ----------
+  const params = new URLSearchParams(location.search);
+  const cardParam = parseInt(params.get("karte") || "", 10);
+  function getMe() { try { return localStorage.getItem("p30-me") || ""; } catch { return ""; } }
+  function setMe(id) { try { localStorage.setItem("p30-me", id); } catch {} }
+  let voterId = "";
+  try {
+    voterId = localStorage.getItem("p30-voter") || "";
+    if (!voterId) { voterId = crypto.randomUUID(); localStorage.setItem("p30-voter", voterId); }
+  } catch { voterId = voterId || Math.random().toString(36).slice(2) + Date.now().toString(36); }
+  let livePoll = null;
 
-    function showUpload(gid) {
-      area.replaceChildren();
-      if (!gid) return;
-      const guest = state.guests.find((g) => g.id === gid);
-      if (guest.locked && !getTokens()[gid]) { area.append(lockedNotice()); return; }
-      const input = h("input", { type: "file", id: "photo-file", accept: "image/*" });
-      const preview = h("div");
-      const msg = h("div", { "aria-live": "polite" });
-      const btn = h("button", { type: "button", class: "btn wide", disabled: true }, "Foto hochladen");
-      let data = null;
-      input.addEventListener("change", async () => {
-        msg.replaceChildren(); preview.replaceChildren(); data = null; btn.disabled = true;
-        const file = input.files[0];
-        if (!file) return;
-        try {
-          data = await compressImage(file);
-          preview.append(h("img", { class: "photo-preview", src: data, alt: "Vorschau deines Fotos" }));
-          btn.disabled = false;
-        } catch (e) { msg.append(h("p", { class: "notice error", text: e.message })); }
-      });
-      btn.addEventListener("click", async () => {
-        if (!data) return;
-        btn.disabled = true;
-        try {
-          const res = await api(`guests/${encodeURIComponent(gid)}/photo`, { method: "POST", body: { token: getTokens()[gid], image: data } });
-          setToken(gid, res.token);
-          guest.locked = true; guest.hasPhoto = true;
-          toast("Foto hochgeladen");
-          area.replaceChildren(h("p", { class: "notice ok", text: "Danke! Dein Foto ist hochgeladen. Wenn du ein anderes nehmen möchtest, lade einfach ein neues hoch – es ersetzt das alte." }));
-        } catch (e) {
-          msg.append(h("p", { class: "notice error", text: e.message }));
-          btn.disabled = false;
-        }
-      });
-      area.append(
-        guest.hasPhoto && getTokens()[gid] ? h("p", { class: "muted small", text: "Du hast schon ein Foto hochgeladen. Ein neues ersetzt das alte." }) : null,
-        h("label", { for: "photo-file", text: "Foto auswählen" }),
-        input, preview, msg, btn
-      );
-    }
-    return section;
+  function meSelect(id, label, required) {
+    const select = h("select", { id, class: "me-select" },
+      h("option", { value: "", text: required ? "Bitte auswählen" : "Ohne Namen" }),
+      state.guests.map((g) => h("option", { value: g.id, text: g.name })));
+    const me = getMe();
+    if (me && state.guests.some((g) => g.id === me)) select.value = me;
+    select.addEventListener("change", () => {
+      if (!select.value) return;
+      setMe(select.value);
+      document.querySelectorAll(".me-select").forEach((o) => { if (o !== select) o.value = select.value; });
+    });
+    return { select, el: h("div", {}, h("label", { for: id, text: label }), select) };
   }
 
-  function renderEvening(c) {
-    if (!c.eveningNote) return null;
-    return h("section", { class: "evening", "aria-labelledby": "abend-h" },
-      h("h2", { id: "abend-h", text: "Am Abend" }),
-      h("p", { class: "pre", text: c.eveningNote })
+  function renderVoteBox() {
+    const box = h("div", { class: "evening-card", id: "abstimmung", "aria-live": "polite" });
+    let lastKey = "";
+    async function tick() {
+      let live;
+      try { live = await api("live"); } catch { return; }
+      if (!live.active) return;
+      const key = JSON.stringify([live.status, live.question && live.question.id, live.status === "closed" ? live.counts : null]);
+      if (key === lastKey && live.status !== "closed") return;
+      lastKey = key;
+      draw(live);
+    }
+    function myVote(qid) { try { return localStorage.getItem("p30-vote-" + qid) || ""; } catch { return ""; } }
+    function draw(live) {
+      box.replaceChildren(h("h3", { class: "evening-h", text: "Sophie oder Anne?" }));
+      if (live.status === "idle" || !live.question) {
+        box.append(h("p", { class: "muted", text: "Gleich geht's los. Sobald eine Frage auf der Leinwand erscheint, stimmst du hier ab." }));
+        return;
+      }
+      const q = live.question;
+      box.append(h("p", { class: "vote-q", text: q.text }));
+      if (live.status === "open") {
+        const mine = myVote(q.id);
+        const btn = (choice, name) => {
+          const b = h("button", { type: "button", class: "vote-btn" + (mine === choice ? " chosen" : ""), "aria-pressed": String(mine === choice) }, name);
+          b.addEventListener("click", async () => {
+            try {
+              await api("vote", { method: "POST", body: { questionId: q.id, voter: voterId, choice } });
+              try { localStorage.setItem("p30-vote-" + q.id, choice); } catch {}
+              toast(`Stimme für ${name} gezählt`);
+              lastKey = ""; draw(live);
+            } catch (e) { toast(e.message); }
+          });
+          return b;
+        };
+        box.append(h("div", { class: "vote-btns" }, btn("sophie", "Sophie"), btn("anne", "Anne")));
+        box.append(h("p", { class: "small muted", text: mine ? "Deine Stimme ist gezählt. Du kannst noch umentscheiden, bis das Ergebnis kommt." : "Tipp auf einen Namen." }));
+      } else {
+        const c = live.counts || { sophie: 0, anne: 0, total: 0 };
+        const pct = (n) => (c.total ? Math.round((n / c.total) * 100) : 0);
+        const row = (name, n) => h("div", { class: "result-row" },
+          h("span", { class: "result-name", text: name }),
+          h("span", { class: "result-bar" }, h("span", { style: `width:${pct(n)}%` })),
+          h("span", { class: "result-num", text: `${pct(n)} %` }));
+        box.append(row("Sophie", c.sophie), row("Anne", c.anne), h("p", { class: "small muted", text: `${c.total} Stimmen` }));
+      }
+    }
+    tick();
+    clearInterval(livePoll);
+    livePoll = setInterval(tick, 3000);
+    return box;
+  }
+
+  function uploadArea({ multiple, withCard }) {
+    const area = h("div");
+    const who = meSelect(withCard ? "proof-name" : "pics-name", "Wer bist du?", withCard);
+    const cardInput = withCard ? h("input", { type: "number", id: "proof-card", inputmode: "numeric", min: "1", max: "999", placeholder: "z. B. 7" }) : null;
+    if (cardInput && cardParam > 0) cardInput.value = String(cardParam);
+    const caption = withCard ? h("input", { type: "text", id: "proof-caption", maxlength: "140", placeholder: "z. B. „Mission erfüllt!“" }) : null;
+    const fileId = withCard ? "proof-file" : "pics-file";
+    const file = h("input", { type: "file", id: fileId, accept: "image/*", multiple: multiple || null });
+    const preview = h("div", { class: "upload-previews" });
+    const msg = h("div", { "aria-live": "polite" });
+    const btn = h("button", { type: "button", class: "btn wide", disabled: true }, multiple ? "Fotos hochladen" : "Beweisfoto hochladen");
+    let datas = [];
+    file.addEventListener("change", async () => {
+      msg.replaceChildren(); preview.replaceChildren(); datas = []; btn.disabled = true;
+      const files = [...file.files].slice(0, 20);
+      if (file.files.length > 20) msg.append(h("p", { class: "notice", text: "Es werden die ersten 20 Fotos genommen. Den Rest einfach danach hochladen." }));
+      for (const f of files) {
+        try {
+          const d = await compressImage(f);
+          datas.push(d);
+          preview.append(h("img", { src: d, alt: "" }));
+        } catch (e) { msg.append(h("p", { class: "notice error", text: e.message })); }
+      }
+      btn.disabled = !datas.length;
+      btn.textContent = multiple ? (datas.length === 1 ? "1 Foto hochladen" : `${datas.length} Fotos hochladen`) : "Beweisfoto hochladen";
+    });
+    btn.addEventListener("click", async () => {
+      msg.replaceChildren();
+      if (withCard && !who.select.value) { msg.append(h("p", { class: "notice error", text: "Bitte wähle aus, wer du bist." })); who.select.focus(); return; }
+      if (withCard && !cardInput.value) { msg.append(h("p", { class: "notice error", text: "Bitte trag die Nummer von deiner Karte ein." })); cardInput.focus(); return; }
+      btn.disabled = true;
+      let done = 0;
+      for (const d of datas) {
+        btn.textContent = datas.length > 1 ? `Wird hochgeladen … ${done + 1} von ${datas.length}` : "Wird hochgeladen …";
+        try {
+          await api("uploads", { method: "POST", body: { guestId: who.select.value || null, card: cardInput ? cardInput.value : null, caption: caption ? caption.value : "", image: d } });
+          done++;
+        } catch (e) { msg.append(h("p", { class: "notice error", text: e.message })); break; }
+      }
+      if (done) {
+        if (window.fireConfetti) window.fireConfetti();
+        toast(done === 1 ? "Foto hochgeladen" : `${done} Fotos hochgeladen`);
+        file.value = ""; preview.replaceChildren(); datas = [];
+        if (caption) caption.value = "";
+        if (cardInput) cardInput.value = "";
+        msg.append(h("p", { class: "notice ok", text: withCard ? "Beweis angekommen! Gleich ist dein Foto auf der Leinwand." : (done === 1 ? "Danke! Dein Foto ist jetzt in der Sammlung und gleich auf der Leinwand." : `Danke! ${done} Fotos sind jetzt in der Sammlung und gleich auf der Leinwand.`) }));
+        refreshGallery();
+      }
+      btn.textContent = multiple ? "Fotos hochladen" : "Beweisfoto hochladen";
+      btn.disabled = true;
+    });
+    area.append(...[
+      who.el,
+      withCard ? h("label", { for: "proof-card", text: "Nummer auf deiner Karte" }) : null, cardInput,
+      h("label", { for: fileId, text: multiple ? "Fotos auswählen (auch mehrere)" : "Foto aufnehmen oder auswählen" }), file,
+      preview,
+      withCard ? h("label", { for: "proof-caption" }, "Kurzer Kommentar ", h("span", { class: "hint", text: "(optional)" })) : null, caption,
+      msg, btn,
+    ].filter(Boolean));
+    return area;
+  }
+
+  const gallery = h("div", { class: "mini-gallery" });
+  async function refreshGallery() {
+    try {
+      const { uploads } = await api("uploads");
+      gallery.replaceChildren(...uploads.slice(0, 12).map((u) =>
+        h("img", { src: "/api/uploads/" + encodeURIComponent(u.id), alt: u.guestName ? "Foto von " + u.guestName : "Foto vom Abend", loading: "lazy" })));
+    } catch {}
+  }
+
+  function renderTonight(c) {
+    const sec = h("section", { id: "heute", class: "tonight", "aria-labelledby": "heute-h" },
+      h("h2", { id: "heute-h", text: "Heute Abend" }),
+      c.eveningNote ? h("p", { class: "pre", text: c.eveningNote }) : null,
+      renderVoteBox(),
+      h("div", { class: "evening-card", id: "beweis" },
+        h("h3", { class: "evening-h", text: "Beweisfoto für deine Karte" }),
+        h("p", { class: "muted small", text: "Aufgabe erledigt? Foto machen, Kartennummer eintragen, fertig." }),
+        uploadArea({ multiple: false, withCard: true })),
+      h("div", { class: "evening-card", id: "fotos" },
+        h("h3", { class: "evening-h", text: "Fotos vom Abend" }),
+        h("p", { class: "muted small", text: "Alle Schnappschüsse von heute – sie landen auf der Leinwand und später in eurer Erinnerung an den Abend." }),
+        uploadArea({ multiple: true, withCard: false })),
+      h("div", { class: "evening-card" },
+        h("h3", { class: "evening-h", text: "Neueste Fotos" }), gallery)
     );
+    refreshGallery();
+    return sec;
+  }
+
+  function renderRecapBanner() {
+    return h("section", { class: "recap-banner" },
+      h("h2", { text: "Der Abend in Zahlen" }),
+      h("p", { text: "Danke, dass ihr dabei wart! Hier gibt's alle Zahlen, Ergebnisse und Fotos zum Anschauen und Herunterladen." }),
+      h("a", { class: "btn", href: "/rueckblick" }, "Rückblick öffnen"));
   }
 
   function render() {
     const c = state.config;
     renderHero(c);
+    if (!c.eveningMode) clearInterval(livePoll);
     app.replaceChildren(
+      c.recapOpen ? renderRecapBanner() : "",
+      c.eveningMode ? renderTonight(c) : "",
+      !c.eveningMode && cardParam > 0 ? h("p", { class: "notice", text: "Die Karten-Aktion startet am Abend der Party. Bis dann!" }) : "",
       ...renderInfos(c),
       renderMemories(c),
       renderFood(),
-      c.photosOpen ? renderPhoto() : "",
-      renderEvening(c) || "",
       renderContact(c) || ""
     );
   }
@@ -438,7 +557,8 @@
     try {
       await reload();
       render();
-      if (location.hash) document.querySelector(location.hash)?.scrollIntoView();
+      if (cardParam > 0 && state.config.eveningMode) document.getElementById("beweis")?.scrollIntoView();
+      else if (location.hash) document.querySelector(location.hash)?.scrollIntoView();
     } catch (e) {
       app.replaceChildren(h("p", { class: "notice error", text: "Die Seite konnte nicht geladen werden. Bitte lade sie neu. (" + e.message + ")" }));
     }
