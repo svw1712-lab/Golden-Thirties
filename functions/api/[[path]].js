@@ -35,41 +35,44 @@ const DEFAULT_CONFIG = {
 
 // Gästeliste, die beim allerersten Start einmalig angelegt wird (danach über /admin pflegen)
 const INITIAL_GUESTS = [
-  "Moritz Graf von Saurma",
-  "Atieno Wolters",
-  "Tom Heldt",
-  "Imani Wolters",
-  "Jonathan Hauff",
-  "Ole Lijun Zhu",
-  "Hagen Hoffmann",
-  "Moritz Heilig",
-  "Begleitung von Moritz Heilig",
-  "Louis Golze",
-  "Jannik Lahn",
-  "Vivien Gschwind",
-  "Martin Kruppa",
-  "Chris Nagel",
-  "Begleitung von Chris Nagel",
-  "Nils Frilling",
-  "Begleitung von Nils Frilling",
-  "Henry Kirste",
-  "Ferdinand Wohlenberg",
-  "Isabella Immhoff",
-  "Nikolaus Wohlenberg",
-  "Faye Bremer",
-  "Marlon Jouhoff",
-  "Dorian Jouhoff",
-  "Vanessa Werner",
-  "Paul (Begleitung von Vanessa Werner)",
-  "Alina König",
-  "Tobi König",
-  "Pauli Sya",
-  "Sebi Sya",
-  "Lukas Göschel",
-  "Ulrike Wohlenberg",
-  "Holger Wohlenberg",
-  "Lorenz Werther"
+  "Moritz S.",
+  "Atieno",
+  "Tom",
+  "Imani",
+  "Jonathan",
+  "Ole",
+  "Hagen",
+  "Moritz H.",
+  "Begleitung von Moritz H.",
+  "Louis",
+  "Jannik",
+  "Vivien",
+  "Martin",
+  "Chris",
+  "Begleitung von Chris",
+  "Nils",
+  "Begleitung von Nils",
+  "Henry",
+  "Ferdinand",
+  "Isabella",
+  "Nikolaus",
+  "Faye",
+  "Marlon",
+  "Dorian",
+  "Vanessa",
+  "Paul (Begleitung von Vanessa)",
+  "Alina",
+  "Tobi",
+  "Pauli",
+  "Sebi",
+  "Lukas",
+  "Ulrike",
+  "Holger",
+  "Lorenz"
 ];
+
+// Einmalige Umbenennung: Nachnamen entfernen (betrifft nur Einträge, die noch genau so heißen)
+const RENAME_V1 = [["Moritz Graf von Saurma", "Moritz S."], ["Atieno Wolters", "Atieno"], ["Tom Heldt", "Tom"], ["Imani Wolters", "Imani"], ["Jonathan Hauff", "Jonathan"], ["Ole Lijun Zhu", "Ole"], ["Hagen Hoffmann", "Hagen"], ["Moritz Heilig", "Moritz H."], ["Begleitung von Moritz Heilig", "Begleitung von Moritz H."], ["Louis Golze", "Louis"], ["Jannik Lahn", "Jannik"], ["Vivien Gschwind", "Vivien"], ["Martin Kruppa", "Martin"], ["Chris Nagel", "Chris"], ["Begleitung von Chris Nagel", "Begleitung von Chris"], ["Nils Frilling", "Nils"], ["Begleitung von Nils Frilling", "Begleitung von Nils"], ["Henry Kirste", "Henry"], ["Ferdinand Wohlenberg", "Ferdinand"], ["Isabella Immhoff", "Isabella"], ["Nikolaus Wohlenberg", "Nikolaus"], ["Faye Bremer", "Faye"], ["Marlon Jouhoff", "Marlon"], ["Dorian Jouhoff", "Dorian"], ["Vanessa Werner", "Vanessa"], ["Paul (Begleitung von Vanessa Werner)", "Paul (Begleitung von Vanessa)"], ["Alina König", "Alina"], ["Tobi König", "Tobi"], ["Pauli Sya", "Pauli"], ["Sebi Sya", "Sebi"], ["Lukas Göschel", "Lukas"], ["Ulrike Wohlenberg", "Ulrike"], ["Holger Wohlenberg", "Holger"], ["Lorenz Werther", "Lorenz"]];
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -124,6 +127,14 @@ async function ensureSchema(db) {
       }
     }
     stmts.push(db.prepare("INSERT OR IGNORE INTO config (key, value) VALUES ('seeded', '1')"));
+    await db.batch(stmts);
+  }
+  const renamed = await db.prepare("SELECT value FROM config WHERE key = 'renamed-v1'").first();
+  if (!renamed) {
+    const stmts = RENAME_V1.map(([oldName, newName]) =>
+      db.prepare("UPDATE guests SET name = ? WHERE name = ? AND NOT EXISTS (SELECT 1 FROM guests WHERE name = ?)").bind(newName, oldName, newName)
+    );
+    stmts.push(db.prepare("INSERT OR IGNORE INTO config (key, value) VALUES ('renamed-v1', '1')"));
     await db.batch(stmts);
   }
   schemaReady = true;

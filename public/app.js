@@ -316,7 +316,7 @@
           });
           formArea.replaceChildren(
             h("div", { class: "notice ok" },
-              h("p", {}, h("strong", { text: `Danke, ${guest.name.split(" ")[0]}! ${noMenu ? "Deine Angaben sind" : "Deine Auswahl ist"} gespeichert.` })),
+              h("p", {}, h("strong", { text: `Danke${/^Begleitung/.test(guest.name) ? "" : ", " + guest.name.split(" ")[0]}! ${noMenu ? "Deine Angaben sind" : "Deine Auswahl ist"} gespeichert.` })),
               summary ? h("p", { class: "pre small", text: summary }) : h("p", { class: "small", text: "Keine besonderen Wünsche – alles klar!" }),
               h("p", { class: "small muted", text: noMenu ? "Sobald das Menü da ist, kannst du hier auf diesem Gerät dein Gericht ergänzen." : "Du kannst sie auf diesem Gerät jederzeit ändern, solange die Auswahl offen ist." })
             ),
